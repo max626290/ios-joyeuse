@@ -14,7 +14,9 @@ def convert(source, target):
         while data := src.read(1024*1024):
             digest.update(data); count += 1
             if not any(data):
-                dst.write(struct.pack('<HHII',0xcac3,0,len(data)//4096,12))
+                # FILL explicitly writes zeroes; DONT_CARE can retain old data.
+                dst.write(struct.pack('<HHII',0xcac2,0,len(data)//4096,16))
+                dst.write(bytes(4))
             else:
                 dst.write(struct.pack('<HHII',0xcac1,0,len(data)//4096,len(data)+12))
                 dst.write(data)

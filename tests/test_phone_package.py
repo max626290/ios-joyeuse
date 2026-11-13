@@ -21,7 +21,8 @@ class Package(unittest.TestCase):
                 head=struct.unpack('<I4H4I',f.read(28));result=bytearray()
                 for _ in range(head[7]):
                     kind,_,blocks,total=struct.unpack('<2H2I',f.read(12))
-                    result.extend(bytes(blocks*4096) if kind==0xcac3 else f.read(total-12))
+                    self.assertIn(kind,(0xcac1,0xcac2))
+                    result.extend(f.read(4)*(blocks*1024) if kind==0xcac2 else f.read(total-12))
             self.assertEqual(bytes(result),raw)
             self.assertEqual(report['expanded_sha256'],hashlib.sha256(raw).hexdigest())
 
