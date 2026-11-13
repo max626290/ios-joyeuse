@@ -10,3 +10,4 @@ out/
 xnu/out/
 xnu/novatek-out/
 node_modules/
+__pycache__/

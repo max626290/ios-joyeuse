@@ -48,26 +48,37 @@ def main():
     for name, command in probes.items():
         try:
             result = subprocess.run(
-                [args.adb, "shell", command], capture_output=True,
-                text=True, encoding="utf-8", errors="replace", timeout=15,
+                [args.adb, "shell", command],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=15,
+                check=False,
             )
             evidence[name] = {
-                "command": command, "returncode": result.returncode,
-                "stdout": result.stdout.strip(), "stderr": result.stderr.strip(),
+                "command": command,
+                "returncode": result.returncode,
+                "stdout": result.stdout.strip(),
+                "stderr": result.stderr.strip(),
             }
         except subprocess.TimeoutExpired:
             evidence[name] = {"command": command, "error": "timeout"}
     events = evidence["input_devices"].get("stdout", "")
     report = {
-        "schema": 1, "read_only": True,
-        "assessment": classify(events), "evidence": evidence,
+        "schema": 1,
+        "read_only": True,
+        "assessment": classify(events),
+        "evidence": evidence,
         "limitations": [
             "Permission denied is missing evidence, not missing hardware.",
             "Family detection cannot establish chip ID, firmware choice, GPIO routing or successful iOS operation.",
         ],
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    args.output.write_text(
+        json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+    )
     print(json.dumps(report["assessment"], ensure_ascii=False))
     print(f"Evidence saved to {args.output}")
 

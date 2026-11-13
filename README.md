@@ -4,7 +4,14 @@ Experimental iOS 16.7.16 (`20H392`, iPhone X userland) on the Redmi Note 9 Pro (
 
 ## Status
 
-**The local joyeuse reaches the iOS lock screen and clock, but touch is unresponsive and the wallpaper is blank.**
+**This branch's Novatek-equipped test phone has not booted this iOS build yet.**
+The experimental NT36675 driver (patches 0119–0120) compiled successfully in
+[kernel run 43405019892](https://github.com/max626290/ios-joyeuse/actions/runs/43405019892).
+Host tests cover contact decoding and simulated SPI firmware transfer; physical
+chip identity, SPI pin order, touch and complete-system boot remain unvalidated.
+See [the French diagnostic](TOUCH-NOVATEK.md) and [installation guide](INSTALLATION-FR.md).
+
+The table below records inherited upstream observations, not tests on this phone:
 
 | Area           | Evidence & Remaining Work                                                                                                                                                      |
 | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |

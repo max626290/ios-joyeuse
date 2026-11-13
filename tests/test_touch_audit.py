@@ -13,7 +13,9 @@ spec.loader.exec_module(audit)
 
 class TouchAudit(unittest.TestCase):
     def test_novatek_does_not_imply_exact_chip(self):
-        result = audit.classify('add device 4: /dev/input/event3\n  name: "NVTCapacitiveTouchScreen"')
+        result = audit.classify(
+            'add device 4: /dev/input/event3\n  name: "NVTCapacitiveTouchScreen"'
+        )
         self.assertEqual(result["family"], "Novatek")
         self.assertIsNone(result["chip"])
         self.assertIs(result["ft8756_driver_compatible"], False)

@@ -142,13 +142,25 @@ def build(
         raise ValueError("disabled touch must not carry firmware")
     if touch_controller == "novatek":
         if novatek_spi_pins is None or sorted(novatek_spi_pins) != [53, 54, 55, 56]:
-            raise ValueError("Novatek requires an explicit permutation of SPI pins 53 54 55 56 (clock MOSI MISO CS)")
+            raise ValueError(
+                "Novatek requires an explicit permutation of SPI pins 53 54 55 56 (clock MOSI MISO CS)"
+            )
         if touch_firmware is None:
             raise ValueError("Novatek requires --touch-firmware")
         firmware = Path(touch_firmware).read_bytes()
-        if hashlib.sha256(firmware).hexdigest() != "1a27ab58c49dbe3b7cfd1864711512a414ba3a1ee767b4b7831f1e8b7538bedd":
-            raise ValueError("unrecognized Novatek firmware: expected official joyeuse Tianma image")
-    if device == "joyeuse" and not qemu and touch_controller == "ft8756" and touch_firmware is None:
+        if (
+            hashlib.sha256(firmware).hexdigest()
+            != "1a27ab58c49dbe3b7cfd1864711512a414ba3a1ee767b4b7831f1e8b7538bedd"
+        ):
+            raise ValueError(
+                "unrecognized Novatek firmware: expected official joyeuse Tianma image"
+            )
+    if (
+        device == "joyeuse"
+        and not qemu
+        and touch_controller == "ft8756"
+        and touch_firmware is None
+    ):
         raise ValueError(
             "--touch-firmware PATH is required for joyeuse hardware builds"
         )
@@ -416,10 +428,14 @@ if __name__ == "__main__":
     )
     ap.add_argument("--qemu", action="store_true")
     ap.add_argument(
-        "--touch-controller", choices=("ft8756", "novatek", "none"), default="ft8756",
+        "--touch-controller",
+        choices=("ft8756", "novatek", "none"),
+        default="ft8756",
         help="joyeuse only; novatek is experimental and requires explicit SPI pins",
     )
-    ap.add_argument("--novatek-spi-pins", nargs=4, type=int, metavar=("CLK", "MOSI", "MISO", "CS"))
+    ap.add_argument(
+        "--novatek-spi-pins", nargs=4, type=int, metavar=("CLK", "MOSI", "MISO", "CS")
+    )
     ap.add_argument(
         "--wifi-mac", help="private file containing the board's six raw Wi-Fi MAC bytes"
     )
