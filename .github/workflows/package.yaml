@@ -1,0 +1,26 @@
+name: Experimental iOS package
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+  actions: read
+jobs:
+  package:
+    runs-on: macos-15
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Prepare tools and disk
+        run: |
+          brew install llvm blacktop/tap/ipsw
+          # Ephemeral hosted runner only; this job does not use Xcode.
+          sudo rm -rf /Applications/Xcode_*.app
+          npm install --no-save @actions/artifact@6.3.1
+          df -h .
+      - name: Build and transfer encrypted package
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ROOT_TRANSFER_PASSWORD: ${{ secrets.ROOT_TRANSFER_PASSWORD }}
+        run: bash tools/build-ios-package.sh

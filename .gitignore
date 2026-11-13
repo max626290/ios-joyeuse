@@ -8,3 +8,5 @@ research/
 # generated images, kernels and build output
 out/
 xnu/out/
+xnu/novatek-out/
+node_modules/

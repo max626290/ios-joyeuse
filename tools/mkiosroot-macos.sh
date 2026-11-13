@@ -164,6 +164,8 @@ if [ -n "$chk" ]; then
 	else
 		echo "   FSCK FAILED on $out:" >&2
 		tail -5 /tmp/ios-fsck.$$ >&2
+		hdiutil detach "$chk" -quiet -force 2>/dev/null || true
+		exit 1
 	fi
 	rm -f /tmp/ios-fsck.$$
 	hdiutil detach "$chk" -quiet -force 2>/dev/null || true
