@@ -6,7 +6,7 @@ permissions:
   actions: read
 jobs:
   package:
-    runs-on: macos-15
+    runs-on: macos-15-intel
     timeout-minutes: 180
     steps:
       - uses: actions/checkout@v7
@@ -30,4 +30,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TRANSFER_FILE: out/package.tar.gz.enc
         with:
-          script: require(process.env.GITHUB_WORKSPACE + '/tools/upload-parts.cjs')
+          script: await require(process.env.GITHUB_WORKSPACE + '/tools/upload-parts.cjs')
