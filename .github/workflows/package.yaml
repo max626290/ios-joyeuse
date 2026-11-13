@@ -14,7 +14,9 @@ jobs:
           persist-credentials: false
       - name: Prepare tools and disk
         run: |
-          brew install llvm blacktop/tap/ipsw
+          brew tap blacktop/tap
+          brew trust blacktop/tap
+          brew install --formula llvm lld blacktop/tap/ipsw
           # Ephemeral hosted runner only; this job does not use Xcode.
           sudo rm -rf /Applications/Xcode_*.app
           npm install --no-save @actions/artifact@6.3.1
