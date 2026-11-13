@@ -24,3 +24,10 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           ROOT_TRANSFER_PASSWORD: ${{ secrets.ROOT_TRANSFER_PASSWORD }}
         run: bash tools/build-ios-package.sh
+      - name: Transfer encrypted parts within free quota
+        uses: actions/github-script@v8
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TRANSFER_FILE: out/package.tar.gz.enc
+        with:
+          script: require(process.env.GITHUB_WORKSPACE + '/tools/upload-parts.cjs')

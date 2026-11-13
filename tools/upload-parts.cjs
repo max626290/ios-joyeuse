@@ -9,7 +9,7 @@ const headers={Authorization:`Bearer ${process.env.GH_TOKEN}`,Accept:'applicatio
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 async function api(suffix){return fetch(`https://api.github.com/repos/${repo}/${suffix}`,{headers});}
 (async()=>{
- const file=process.argv[2],fd=fs.openSync(file,'r'),size=fs.statSync(file).size;
+ const file=process.env.TRANSFER_FILE||process.argv[2],fd=fs.openSync(file,'r'),size=fs.statSync(file).size;
  const chunkSize=128*1024*1024,deadline=Date.now()+3*3600*1000;
  const manifest={size,parts:[]};
  for(let offset=0,index=0;offset<size;index++){

@@ -39,4 +39,3 @@ m={'ready':True,'product':'joyeuse','ios':'16.7.16','build':'20H392',
 PY
 tar -C out/package -czf - . | openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt \
     -pass env:ROOT_TRANSFER_PASSWORD -out out/package.tar.gz.enc
-node tools/upload-parts.cjs out/package.tar.gz.enc
