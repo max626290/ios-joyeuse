@@ -1,0 +1,254 @@
+--- a/bsd/dev/sweet_touch.c
++++ b/bsd/dev/sweet_touch.c
+@@ -1297,6 +1297,8 @@
+ 	return false;
+ }
+ 
++#include "sweet_novatek_spi.inc"
++
+ static void
+ touch_thread(void *arg, wait_result_t result)
+ {
+@@ -1312,6 +1314,11 @@
+ 		if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess &&
+ 		    SecureDTGetProperty(chosen, "sweet-touch-controller",
+ 		        (const void **)&controller, &size) == kSuccess) {
++			if (controller && size == sizeof("novatek") &&
++			    !memcmp(controller, "novatek", sizeof("novatek"))) {
++				nvt_run();
++				goto out;
++			}
+ 			if (!controller || size != sizeof("ft8756") ||
+ 			    memcmp(controller, "ft8756", sizeof("ft8756"))) {
+ 				printf("SWEET TOUCH: non-FocalTech controller: hardware access disabled; Novatek transport pending\n");
+--- /dev/null
++++ b/bsd/dev/sweet_novatek_spi.inc
+@@ -0,0 +1,228 @@
++/* Experimental NT36675 SPI bring-up. Protocol facts from the Android vendor
++ * driver; implementation uses the existing XNU board GPIO transport.
++ * Never probes multiple pin assignments automatically.
++ */
++#include "sweet_novatek.h"
++
++struct nvt_segment { uint32_t offset, address, last, crc; };
++static struct nvt_frame nvt_previous;
++static uint8_t nvt_tx[130], nvt_rx[130];
++
++static uint32_t
++nvt_le32(const uint8_t *p)
++{
++    return (uint32_t)p[0] | ((uint32_t)p[1] << 8) |
++        ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24);
++}
++
++static int
++nvt_segments(const uint8_t *fw, unsigned size, struct nvt_segment *parts,
++    unsigned *count)
++{
++    if (!fw || size < 48) return EINVAL;
++    uint32_t header = nvt_le32(fw);
++    if (header < 48 || header > size || (header - 48) % 16 ||
++        header > 48 + 30 * 16 || (fw[40] & 0x10)) return EINVAL;
++    *count = 2 + (header - 48) / 16;
++    for (unsigned i = 0; i < *count; ++i) {
++        struct nvt_segment *s = &parts[i];
++        if (i < 2) {
++            s->offset = nvt_le32(fw + i * 12);
++            s->address = nvt_le32(fw + i * 12 + 4);
++            s->last = nvt_le32(fw + i * 12 + 8);
++            s->crc = nvt_le32(fw + 24 + i * 4);
++        } else {
++            const uint8_t *p = fw + 48 + (i - 2) * 16;
++            s->address = nvt_le32(p);
++            s->last = nvt_le32(p + 4);
++            s->offset = nvt_le32(p + 8);
++            s->crc = nvt_le32(p + 12);
++        }
++        if (!s->last) { if (i < 2) return EINVAL; else continue; }
++        /* Only controller SRAM, never the register window. last is len-1. */
++        if (s->offset >= size || s->last >= size - s->offset ||
++            s->address >= 0x30000 || s->last >= 0x30000 - s->address)
++            return EINVAL;
++    }
++    return 0;
++}
++
++static void
++nvt_page(uint32_t address)
++{
++    uint8_t page[3] = {0xff, (uint8_t)(address >> 15), (uint8_t)(address >> 7)};
++    fts_xfer(page, NULL, 3);
++}
++
++static void
++nvt_read(uint32_t address, uint8_t *data, unsigned size)
++{
++    while (size) {
++        unsigned n = 128 - (address & 127);
++        if (n > size) n = size;
++        nvt_page(address);
++        memset(nvt_tx, 0, n + 2);
++        nvt_tx[0] = address & 127;
++        fts_xfer(nvt_tx, nvt_rx, n + 2);
++        memcpy(data, nvt_rx + 2, n);
++        address += n; data += n; size -= n;
++    }
++}
++
++static void
++nvt_write(uint32_t address, const uint8_t *data, unsigned size)
++{
++    while (size) {
++        unsigned n = 128 - (address & 127);
++        if (n > size) n = size;
++        nvt_page(address);
++        nvt_tx[0] = (address & 127) | 0x80;
++        memcpy(nvt_tx + 1, data, n);
++        fts_xfer(nvt_tx, NULL, n + 1);
++        address += n; data += n; size -= n;
++    }
++}
++
++static void
++nvt_number(uint32_t address, uint32_t value, unsigned bytes)
++{
++    uint8_t b[4];
++    for (unsigned i = 0; i < 4; ++i) b[i] = (uint8_t)(value >> (8 * i));
++    nvt_write(address, b, bytes);
++}
++
++static void
++nvt_reset(void)
++{
++    nvt_number(0x3f0fe, 0x69, 1);
++    touch_wait(5);
++    nvt_number(0x3f310, 0, 1);
++}
++
++static void
++nvt_emit(void *context, unsigned slot, int down, unsigned x, unsigned y)
++{
++    (void)context;
++    sweet_hid_touch((int)slot, down, (int)x, (int)y);
++}
++
++static int
++nvt_download(const uint8_t *fw, unsigned size)
++{
++    struct nvt_segment parts[32];
++    unsigned count = 0;
++    int error = nvt_segments(fw, size, parts, &count);
++    if (error) return error;
++    nvt_reset();
++    for (unsigned i = 0; i < count; ++i) {
++        struct nvt_segment *s = &parts[i];
++        if (!s->last) continue;
++        for (unsigned done = 0; done <= s->last;) {
++            uint8_t check[128];
++            unsigned n = s->last + 1 - done;
++            if (n > sizeof(check)) n = sizeof(check);
++            nvt_write(s->address + done, fw + s->offset + done, n);
++            nvt_read(s->address + done, check, n);
++            if (memcmp(check, fw + s->offset + done, n)) {
++                printf("SWEET NVT: SRAM verification failed segment=%u offset=%u\n", i, done);
++                return EIO;
++            }
++            done += n;
++        }
++    }
++    /* NT36675 has 17-bit ILM/DLM length registers. */
++    for (unsigned i = 0; i < 2; ++i) {
++        nvt_number(i ? 0x3f12c : 0x3f128, parts[i].address, 3);
++        nvt_number(i ? 0x3f130 : 0x3f118, parts[i].last, 3);
++        nvt_number(i ? 0x3f104 : 0x3f100, parts[i].crc, 4);
++    }
++    uint8_t enable;
++    nvt_read(0x3f30e, &enable, 1);
++    nvt_number(0x3f30e, enable | 0x80, 1);
++    nvt_number(0x22d60, 0, 1);
++    nvt_number(0x22d50, 0xae, 1);
++    nvt_number(0x3f10d, 1, 1);
++    for (unsigned retry = 0; retry < 100; ++retry) {
++        uint8_t state;
++        touch_wait(10);
++        nvt_read(0x22d60, &state, 1);
++        if (state >= 0xa1 && state <= 0xaf) return 0;
++    }
++    return ETIMEDOUT;
++}
++
++static void
++nvt_run(void)
++{
++    DTEntry chosen;
++    const uint8_t *fw;
++    const uint32_t *pins;
++    unsigned long size, pin_size;
++    if (SecureDTLookupEntry(NULL, "/chosen", &chosen) != kSuccess ||
++        SecureDTGetProperty(chosen, "novatek-firmware", (const void **)&fw, &size) != kSuccess ||
++        size != 139264 ||
++        SecureDTGetProperty(chosen, "novatek-spi-pins", (const void **)&pins, &pin_size) != kSuccess ||
++        pin_size != 16) {
++        printf("SWEET NVT: missing firmware or explicit SPI pin map\n");
++        return;
++    }
++    unsigned mask = 0;
++    for (unsigned i = 0; i < 4; ++i) {
++        if (pins[i] < 53 || pins[i] > 56) return;
++        mask |= 1u << (pins[i] - 53);
++    }
++    if (mask != 15) return;
++    struct nvt_segment parts[32]; unsigned count;
++    if (nvt_segments(fw, (unsigned)size, parts, &count)) return;
++    touch_wait(45000);
++    st.gpio = ml_io_map(TOUCH_NORTH_PA, 0x100000);
++    st.gpio_w = ml_io_map(TOUCH_WEST_PA, 0x40000);
++    if (!st.gpio || !st.gpio_w) return;
++    st.spi = true;
++    st.sp_clk = pins[0]; st.sp_mosi = pins[1]; st.sp_miso = pins[2]; st.sp_cs = pins[3];
++    touch_gpio_mi(9, 0, 3, 3, false, false);
++    touch_gpio_mi(8, 0, 3, 3, true, false);
++    fts_spi_cfg();
++    touch_wait(5);
++    fts_io(8, true);
++    touch_wait(10);
++    nvt_reset();
++    uint8_t identity[6];
++    nvt_read(0x1f64e, identity, sizeof(identity));
++    printf("SWEET NVT: chip=%02x:%02x:%02x:%02x:%02x:%02x pins=%u,%u,%u,%u\n",
++        identity[0], identity[1], identity[2], identity[3], identity[4], identity[5],
++        pins[0], pins[1], pins[2], pins[3]);
++    if (identity[3] != 0x75 || identity[4] != 0x66 || identity[5] != 3) {
++        printf("SWEET NVT: not NT36675, firmware upload refused\n");
++        return;
++    }
++    int error = nvt_download(fw, (unsigned)size);
++    printf("SWEET NVT: firmware load result=%d\n", error);
++    if (error) return;
++    uint8_t info[16];
++    nvt_read(0x22d78, info, sizeof(info));
++    if ((unsigned)info[0] + info[1] != 255 ||
++        (((unsigned)info[4] << 8) | info[5]) != 1080 ||
++        (((unsigned)info[6] << 8) | info[7]) != 2400) {
++        printf("SWEET NVT: invalid firmware dimensions/version\n");
++        return;
++    }
++    printf("SWEET NVT: ready fw=%u, 1080x2400\n", info[0]);
++    unsigned errors = 0;
++    while (!st.dead) {
++        uint8_t data[NVT_REPORT_SIZE];
++        struct nvt_frame next;
++        nvt_read(0x22d00, data, sizeof(data));
++        error = nvt_decode(data, sizeof(data), 1080, 2400, &next);
++        if (!error) {
++            nvt_deliver(&nvt_previous, &next, nvt_emit, NULL);
++            errors = 0;
++        } else if (++errors >= 10 || error == NVT_RECOVERY) {
++            memset(&next, 0, sizeof(next));
++            nvt_deliver(&nvt_previous, &next, nvt_emit, NULL);
++            printf("SWEET NVT: report failure=%d; stopped with contacts released\n", error);
++            return;
++        }
++        touch_wait(10);
++    }
++}

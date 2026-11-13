@@ -1,0 +1,102 @@
+--- a/bsd/dev/sweet_touch.c
++++ b/bsd/dev/sweet_touch.c
+@@ -1301,6 +1301,24 @@
+ touch_thread(void *arg, wait_result_t result)
+ {
+ 	bool miatoll = touch_is_miatoll();
++	/* Explicit board selection precedes all GPIO/MMIO and firmware access.
++	 * Missing property preserves compatibility with existing FocalTech ADTs.
++	 * Novatek transport/firmware bring-up is deliberately not guessed here.
++	 */
++	if (miatoll) {
++		DTEntry chosen;
++		const char *controller = NULL;
++		unsigned long size = 0;
++		if (SecureDTLookupEntry(NULL, "/chosen", &chosen) == kSuccess &&
++		    SecureDTGetProperty(chosen, "sweet-touch-controller",
++		        (const void **)&controller, &size) == kSuccess) {
++			if (!controller || size != sizeof("ft8756") ||
++			    memcmp(controller, "ft8756", sizeof("ft8756"))) {
++				printf("SWEET TOUCH: non-FocalTech controller: hardware access disabled; Novatek transport pending\n");
++				goto out;
++			}
++		}
++	}
+ 	if (miatoll) {
+ 		DTEntry chosen;
+ 		unsigned long size;
+--- /dev/null
++++ b/bsd/dev/sweet_novatek.h
+@@ -0,0 +1,72 @@
++/* Novatek report decoder: no MMIO, GPIO or firmware writes.
++ * Protocol reference: LineageOS/android_kernel_xiaomi_sm6250,
++ * 0c870bf38789d65e6153d4b11c0eb70783d1ad7c, nt36xxx_spi.
++ * Input is 65 payload bytes AFTER stripping SPI command and dummy byte.
++ * Independently written decoder; do not pass FocalTech reports here.
++ */
++#ifndef SWEET_NOVATEK_H
++#define SWEET_NOVATEK_H
++#include <stdint.h>
++#include <stddef.h>
++
++#define NVT_CONTACTS 10
++#define NVT_REPORT_SIZE 65
++enum nvt_result { NVT_OK = 0, NVT_INVALID = -1, NVT_RECOVERY = -2 };
++struct nvt_contact { uint16_t x, y, pressure; uint8_t width, active; };
++struct nvt_frame { struct nvt_contact contact[NVT_CONTACTS]; };
++
++/* Transactional: rejected frames leave the output unchanged. A transport
++ * error is NOT an empty frame (which would release all fingers).
++ */
++static inline int
++nvt_decode(const uint8_t *data, size_t len, unsigned width, unsigned height,
++    struct nvt_frame *out)
++{
++    struct nvt_frame next = {0};
++    unsigned seen = 0, handshake = 1, watchdog = 1;
++    if (!data || !out || len != NVT_REPORT_SIZE || !width || !height ||
++        width > 4096 || height > 4096) return NVT_INVALID;
++    for (unsigned i = 0; i < 6; ++i) {
++        handshake &= data[i] == 0x77;
++        watchdog &= data[i] == 0xfd || data[i] == 0xfe;
++    }
++    if (handshake || watchdog) return NVT_RECOVERY;
++    for (unsigned i = 0; i < NVT_CONTACTS; ++i) {
++        const uint8_t *p = data + 6 * i;
++        unsigned id = p[0] >> 3, state = p[0] & 7;
++        if (state != 1 && state != 2) continue;
++        if (!id || id > NVT_CONTACTS || (seen & (1u << (id - 1))))
++            return NVT_INVALID;
++        unsigned x = ((unsigned)p[1] << 4) | (p[3] >> 4);
++        unsigned y = ((unsigned)p[2] << 4) | (p[3] & 15);
++        if (x >= width || y >= height) return NVT_INVALID;
++        unsigned pressure = p[5];
++        if (i < 2) pressure |= (unsigned)data[62 + i] << 8;
++        if (pressure > 1000) pressure = 1000;
++        next.contact[id - 1] = (struct nvt_contact){
++            (uint16_t)x, (uint16_t)y, (uint16_t)(pressure ? pressure : 1),
++            p[4] ? p[4] : 1, 1};
++        seen |= 1u << (id - 1);
++    }
++    *out = next;
++    return NVT_OK;
++}
++
++typedef void (*nvt_emit_fn)(void *, unsigned, int, unsigned, unsigned);
++
++/* Native panel coordinates; SweetHID owns the iPhone canvas transform.
++ * Call only after a successful decode. Preserve release coordinates.
++ */
++static inline void
++nvt_deliver(struct nvt_frame *previous, const struct nvt_frame *next,
++    nvt_emit_fn emit, void *context)
++{
++    for (unsigned i = 0; i < NVT_CONTACTS; ++i) {
++        const struct nvt_contact *p = &next->contact[i];
++        if (p->active) emit(context, i, 1, p->x, p->y);
++        else if (previous->contact[i].active)
++            emit(context, i, 0, previous->contact[i].x, previous->contact[i].y);
++    }
++    *previous = *next;
++}
++#endif

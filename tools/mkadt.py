@@ -124,6 +124,8 @@ def build(
     touch_firmware=None,
     wifi_mac=None,
     bluetooth_mac=None,
+    touch_controller="ft8756",
+    novatek_spi_pins=None,
 ):
     """qemu=True: same tree, but with QEMU virt's GIC addresses and CNTFRQ (tools/qemu-sweet.py).
     device: key of DEVICES (sweet or joyeuse). phys/mem: override the single
@@ -132,7 +134,21 @@ def build(
     if product is None and not qemu:
         raise ValueError("--product ADT is required for hardware builds")
     product_props = d22ap_product(product) if product is not None else None
-    if device == "joyeuse" and not qemu and touch_firmware is None:
+    if touch_controller not in ("ft8756", "novatek", "none"):
+        raise ValueError("unsupported touch controller")
+    if touch_controller != "ft8756" and (device != "joyeuse" or qemu):
+        raise ValueError("touch-controller selection is only for joyeuse hardware")
+    if touch_controller == "none" and touch_firmware is not None:
+        raise ValueError("disabled touch must not carry firmware")
+    if touch_controller == "novatek":
+        if novatek_spi_pins is None or sorted(novatek_spi_pins) != [53, 54, 55, 56]:
+            raise ValueError("Novatek requires an explicit permutation of SPI pins 53 54 55 56 (clock MOSI MISO CS)")
+        if touch_firmware is None:
+            raise ValueError("Novatek requires --touch-firmware")
+        firmware = Path(touch_firmware).read_bytes()
+        if hashlib.sha256(firmware).hexdigest() != "1a27ab58c49dbe3b7cfd1864711512a414ba3a1ee767b4b7831f1e8b7538bedd":
+            raise ValueError("unrecognized Novatek firmware: expected official joyeuse Tianma image")
+    if device == "joyeuse" and not qemu and touch_controller == "ft8756" and touch_firmware is None:
         raise ValueError(
             "--touch-firmware PATH is required for joyeuse hardware builds"
         )
@@ -337,6 +353,11 @@ def build(
     # No effaceable storage: keybagd then reads /private/var/keybags/systembag.kb
     # as a plain plist instead of decrypting it with the effaceable key.
     if device == "joyeuse" and not qemu:
+        chosen.props.append(("sweet-touch-controller", 0, cstr(touch_controller)))
+        if touch_controller == "novatek":
+            chosen.props.append(("novatek-firmware", 0, firmware))
+            chosen.props.append(("novatek-spi-pins", 0, u32(*novatek_spi_pins)))
+    if device == "joyeuse" and not qemu and touch_controller == "ft8756":
         chosen.props.append(
             ("focaltech-firmware", 0, Path(touch_firmware).read_bytes())
         )
@@ -395,6 +416,11 @@ if __name__ == "__main__":
     )
     ap.add_argument("--qemu", action="store_true")
     ap.add_argument(
+        "--touch-controller", choices=("ft8756", "novatek", "none"), default="ft8756",
+        help="joyeuse only; novatek is experimental and requires explicit SPI pins",
+    )
+    ap.add_argument("--novatek-spi-pins", nargs=4, type=int, metavar=("CLK", "MOSI", "MISO", "CS"))
+    ap.add_argument(
         "--wifi-mac", help="private file containing the board's six raw Wi-Fi MAC bytes"
     )
     ap.add_argument(
@@ -418,6 +444,8 @@ if __name__ == "__main__":
         touch_firmware=args.touch_firmware,
         wifi_mac=args.wifi_mac,
         bluetooth_mac=args.bluetooth_mac,
+        touch_controller=args.touch_controller,
+        novatek_spi_pins=args.novatek_spi_pins,
     )
     blob = adt.serialize(root)
     Path(args.out).write_bytes(blob)
