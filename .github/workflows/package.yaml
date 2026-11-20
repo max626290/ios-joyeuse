@@ -21,6 +21,12 @@ jobs:
           sudo rm -rf /Applications/Xcode_*.app
           npm install --no-save @actions/artifact@6.3.1
           df -h .
+      - name: Check transfer client before building
+        uses: actions/github-script@v8
+        env:
+          TRANSFER_PREFLIGHT: '1'
+        with:
+          script: await require(process.env.GITHUB_WORKSPACE + '/tools/upload-parts.cjs')
       - name: Build and transfer encrypted package
         env:
           GH_TOKEN: ${{ github.token }}
