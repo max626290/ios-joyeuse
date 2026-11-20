@@ -25,6 +25,20 @@ par la procédure officielle Xiaomi avant tout démarrage d'image personnalisée
 L'outil officiel peut imposer une attente liée au compte Xiaomi ; les scripts
 ne contournent pas cette attente. Le déverrouillage efface les données.
 
+L'outil officiel téléchargé sur ce PC est `../tools/mi-unlock/miflash_unlock.exe`.
+Dans MIUI, utiliser le même compte Xiaomi dans le téléphone et dans cet outil.
+L'association se fait dans Paramètres > Paramètres supplémentaires > Options
+pour les développeurs > Statut de déverrouillage Mi > Ajouter un compte et un
+appareil. Si les options développeur sont masquées, toucher plusieurs fois la
+version MIUI dans À propos du téléphone. Suivre ensuite l'outil officiel :
+téléphone éteint, maintenir Volume bas + Power pour fastboot, brancher l'USB et
+lancer Unlock. Si un délai est affiché, le respecter et conserver le même compte.
+La connexion au compte et les éventuelles validations doivent être faites par
+le propriétaire ; ne pas communiquer le mot de passe dans le chat.
+
+Sources officielles : [téléchargement Xiaomi](https://en.miui.com/unlock/download_en.html)
+et [FAQ du déverrouillage](https://www.mi.com/global/support/faq/details/KA-07238/).
+
 Pour sauvegarder les partitions, démarrer temporairement un recovery compatible
 avec **joyeuse** et disposant d'ADB root. Aucune image de recovery n'est incluse
 ni prétendue validée ici. Ne pas choisir une image pour sweet ou topaz.

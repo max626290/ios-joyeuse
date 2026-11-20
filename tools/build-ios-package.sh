@@ -17,7 +17,8 @@ python3 tools/mkadt.py out/joyeuse.adt --device joyeuse --highmem --product fw/d
     --novatek-spi-pins 55 53 54 56 --wifi-mac fw/wifi-mac.bin --bluetooth-mac fw/bluetooth-mac.bin
 tools/cmdline.sh good > out/cmdline.txt
 python3 tools/mkpayload.py out/kernel/kernel.development.sweet out/joyeuse.adt out/payload.bin --cmdline-file out/cmdline.txt
-export PATH="$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
+PATH="$(brew --prefix llvm)/bin:$(brew --prefix lld)/bin:$PATH"
+export PATH
 python3 tools/build-shim.py fw/dtb out/payload.bin out/package/shim-boot.img
 tools/mkiosroot-macos.sh ipsw/087-86698-044.dmg ipsw/087-86593-047.dmg ipsw/087-86715-047.dmg out/ios16-root.img 16G
 python3 tools/raw-to-sparse.py out/ios16-root.img out/package/ios16-root.simg > out/package/root-expanded.json
